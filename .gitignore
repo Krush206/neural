@@ -1,0 +1,8 @@
+# Generated plots
+*.png
+Rplots.pdf
+
+# R artifacts
+.Rhistory
+.RData
+*.Rds

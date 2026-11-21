@@ -34,23 +34,30 @@ news_lm <- function(formula, data,
   y <- mf[, 1]                                  # response
   X <- as.matrix(cbind(1, mf[, -1, drop = FALSE]))  # design matrix w/ intercept
 
-  # Gradient descent (same math as main.r, packaged as a New S object).
-  n <- nrow(X)
-  beta <- numeric(ncol(X))
-  history <- numeric(iterations)
+  # Gradient descent for the linear model, shared by the constructor and fit().
+  gd_lm <- function(X, y, learning_rate = 0.05, iterations = 5000) {
 
-  for (i in 1:iterations) {
-    fitted <- X %*% beta
-    resid <- fitted - y
-    history[i] <- sum(resid^2) / (2 * n)
-    grad <- t(X) %*% resid / n
-    beta <- beta - learning_rate * as.vector(grad)
+    n <- nrow(X)
+    beta <- numeric(ncol(X))
+    history <- numeric(iterations)
+
+    for (i in 1:iterations) {
+      resid <- X %*% beta - y
+      history[i] <- sum(resid^2) / (2 * n)
+      beta <- beta - learning_rate * as.vector(t(X) %*% resid / n)
+    }
+
+    list(coefficients = beta, history = history)
   }
 
+  # Gradient descent (same math as main.r, packaged as a New S object).
+  fit <- gd_lm(X, y, learning_rate, iterations)
+
   obj <- list(
-    coefficients = beta,
-    history      = history,
+    coefficients = fit$coefficients,
+    history      = fit$history,
     terms        = terms(formula),
+    model        = mf,                 # New S: model objects keep their data
     call         = match.call(),
     xnames       = colnames(X)
   )
@@ -65,12 +72,15 @@ news_lm <- function(formula, data,
 fit <- function(object, ...) UseMethod("fit")
 predict.news_model <- function(object, newdata, ...) {
   if (missing(newdata)) {
-    # Fitted values on the training data.
-    X <- model.matrix(object$terms, model.frame(object$terms, eval(object$call$data)))
+    # Fitted values on the training data (reuse the stored model frame).
+    X <- model.matrix(object$terms, object$model)
     drop(X %*% object$coefficients)
   } else {
-    mf <- model.frame(object$terms, newdata)
-    X  <- as.matrix(cbind(1, mf[, -1, drop = FALSE]))
+    # Design matrix for new data, built the New S way. Drop the response
+    # term so newdata need not contain the response column.
+    mt <- delete.response(object$terms)
+    mf <- model.frame(mt, newdata)
+    X  <- model.matrix(mt, mf)
     drop(X %*% object$coefficients)
   }
 }
@@ -86,6 +96,17 @@ plot.news_lm <- function(x, ...) {
        main = "New S Model: Gradient-Descent Convergence",
        xlab = "Iteration", ylab = "Cost")
   grid()
+}
+
+# Refit from scratch using the data stored in the object.
+fit.news_lm <- function(object, ...) {
+  mf <- object$model
+  y <- mf[, 1]
+  X <- model.matrix(object$terms, mf)
+  fit <- gd_lm(X, y)
+  object$coefficients <- fit$coefficients
+  object$history <- fit$history
+  object
 }
 
 # --------------------------------------------------
